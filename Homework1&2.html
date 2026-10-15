@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Homework: Task 1 and Task 2</title>
+<style>
+  body { font-family: Georgia, 'Times New Roman', serif; max-width: 800px; margin: 0 auto; padding: 0 16px 60px; line-height: 1.6; color: #222; background: #fff; }
+  nav { position: sticky; top: 0; background: #fff; border-bottom: 1px solid #ddd; padding: 10px 0; margin-bottom: 10px; z-index: 5; }
+  nav a { margin-right: 18px; color: #1a4fa0; text-decoration: none; font-weight: bold; }
+  h1 { font-size: 1.7em; margin: 1em 0 0.2em; }
+  #task2 h2 { margin-top: 2em; border-bottom: 1px solid #ddd; padding-bottom: 0.2em; font-size: 1.3em; }
+  #task2 table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 0.95em; }
+  #task2 th, #task2 td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; vertical-align: top; }
+  #task2 th { background: #f3f3f3; }
+  #task2 pre { background: #f6f6f6; border: 1px solid #ddd; padding: 12px; overflow-x: auto; font-size: 0.85em; line-height: 1.45; }
+  #task2 code { font-family: Consolas, Menlo, monospace; }
+  .meta { color: #666; font-size: 0.9em; }
+  hr.split { margin: 3em 0 0; border: 0; border-top: 3px solid #ddd; }
+
+  /* Task 1: original styles, kept dark and scoped to its own box */
+  #task1 { font: 14px monospace; background: #12121c; color: #ddd; padding: 14px 16px; border-radius: 10px; margin-top: 12px; line-height: 1.4; }
+  #task1 h2, #task1 h3 { font-family: monospace; border: 0; margin: 0.6em 0; }
+  #task1 canvas { background: #1b1b2f; border-radius: 8px; display: block; margin: 10px 0; max-width: 100%; }
+  #task1 input, #task1 button { font: inherit; padding: 3px 8px; }
+  #task1 b { color: #7fdbca; }
+  #task1 pre { white-space: pre-wrap; overflow-x: auto; }
+</style>
+</head>
+<body>
+
+<nav><a href="#task1">Task 1: Toy ECC</a><a href="#task2">Task 2: Wallet seed to address</a></nav>
+
+<section id="task1">
+<h1 style="color:#fff;margin-top:0">Task 1</h1>
+<h2>&#128273; Toy Ethereum key: y&sup2; = x&sup3; + 7 (mod 17)</h2>
+G = (1,5) &middot; private key k = <input id="k" type="number" value="6" min="1" style="width:60px">
+<button onclick="run()">&#9654; Slow-mo kG</button>
+<canvas id="c" width="360" height="360"></canvas>
+<pre id="out"></pre>
+<h3>Statistics (all k = 1 &hellip; order-1)</h3>
+<pre id="st"></pre>
+</section>
+
+<hr class="split">
+
+<section id="task2">
+<h1>HMWK 2 - From Wallet Seed to Ethereum Address</h1>
+<p class="meta">Hashing, key derivation and cryptographic primitives</p>
+<h2>1. The big picture</h2>
+<p>An Ethereum wallet looks like it just gives you twelve words and an address, but a few different steps sit between the two. Only the first one is random. After that everything is calculated from the step before, so the same words always give the same address.</p>
+<ol>
+  <li>Random bits are turned into a mnemonic of 12 to 24 words (BIP-39).</li>
+  <li>The mnemonic is stretched into a 512-bit seed (also BIP-39).</li>
+  <li>The seed is used to derive a private key along a fixed path (BIP-32 and BIP-44).</li>
+  <li>The private key gives a public key on an elliptic curve (secp256k1).</li>
+  <li>The public key is hashed with Keccak-256 and the last 20 bytes are the address.</li>
+  <li>The letters in the address get upper or lower case based on another hash, so typos can be caught (EIP-55).</li>
+</ol>
+
+<h2>2. What each piece does</h2>
+<p><strong>BIP-39.</strong> This is the part that makes a backup possible for a normal person. 128 to 256 random bits get a small checksum added (the first few bits of their SHA-256 hash), then the bits are cut into groups of 11 and every group picks a word from a list of 2048. That gives 12 words for 128 bits and 24 words for 256 bits. To get the seed, the words are put through PBKDF2 with HMAC-SHA512, 2048 rounds, which gives 64 bytes. There is also an optional passphrase, sometimes called the 25th word, that changes the seed completely.</p>
+<p><strong>BIP-32.</strong> One seed can produce a whole tree of keys. The master key comes from HMAC-SHA512 of the seed (the left 32 bytes are the key, the right 32 bytes are the chain code). Each child key is computed from the parent key, the chain code and an index. Indexes from 2<sup>31</sup> up are called hardened, and they use the parent's private key, so someone who only has a public key cannot derive them.</p>
+<p><strong>BIP-44.</strong> BIP-32 does not say which branch of the tree to use, and BIP-44 fixes that so every wallet agrees. The path is <code>m / 44' / 60' / 0' / 0 / 0</code>, which means purpose, coin type (60 is Ethereum), account, change, and address index. Adding a new account in a wallet usually just increases the last number.</p>
+<p><strong>secp256k1.</strong> This is the elliptic curve Ethereum uses (the same one as Bitcoin). The private key is a big number k, and the public key is the point k times G, where G is a fixed starting point on the curve. Going forward is easy, but getting k back from the public key is the discrete logarithm problem, which is believed to be too hard to solve. The same keys are also used to sign transactions.</p>
+<p><strong>Keccak-256.</strong> A hash function with a 256-bit output. Ethereum hashes the 64 bytes of the public key (x and y) and keeps only the last 20 bytes, which is the address.</p>
+<p><strong>EIP-55.</strong> The address is written in lower case hex, hashed again with Keccak-256, and every letter (a to f) is made upper case if the matching hash digit is 8 or more. The address is still the same address, but now the case pattern works as a checksum. If someone mistypes a character, the pattern usually stops matching and the wallet can warn them.</p>
+
+<h2>3. Telling the ideas apart</h2>
+<p>These are easy to mix up, so here is how I separate them:</p>
+<ul>
+  <li><strong>Key generation</strong> means making a brand new secret from real randomness. In the pipeline this only happens once, at the very start, when the entropy for the mnemonic is picked.</li>
+  <li><strong>Key derivation</strong> means computing keys from a secret you already have. It is repeatable: same input, same output. The seed, the master key and the child keys are all derived.</li>
+  <li><strong>Public-key cryptography</strong> is the secp256k1 part. The private and public key are linked mathematically, so you can prove you own a key (by signing) without showing it.</li>
+  <li><strong>Hashing</strong> takes any input and gives a fixed-size fingerprint. There is no key and no way back. Keccak-256 does it for the address, and SHA-512 is used inside BIP-32 and BIP-39.</li>
+  <li><strong>Checksums</strong> only exist to catch mistakes. They add no secrecy. The last bits of the mnemonic and the letter case in EIP-55 are both checksums.</li>
+  <li><strong>Encoding</strong> changes how something is written without changing what it is: bits to words, bytes to hex, lower case to mixed case. It can always be reversed.</li>
+</ul>
+<p>One detail worth noting: the mnemonic is an encoding of the entropy, but the seed is not decoded from the words. It is derived from the text of the words with PBKDF2, so that step belongs to derivation.</p>
+
+<h2>4. Test run in Python</h2>
+<p>To check the pipeline I ran it in Python on a public development mnemonic (the one Hardhat and Anvil use, never for real money). BIP-32, Keccak and EIP-55 are written by hand, and libraries only handle the word list and the curve math. The address at the end matches the known first account of that mnemonic, so the whole chain works.</p>
+<pre>Mnemonic: test test test test test test test test test test test junk
+
+Seed (64 bytes):
+  9dfc3c64c2f8bede1533b6a79f8570e5943e0b8fd1cf77107adf7b72cef42185
+  d564a3aee24cab43f80e3c4538087d70fc824eabbad596a23c97b6ee8322ccc0
+
+Master private key:
+  ada5f7928ef8f684afa7b06929b5d1f653e486b52077ba9d798eded96c851ade
+
+Path m/44'/60'/0'/0/0, private key:
+  ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+
+Public key (x || y, 64 bytes):
+  8318535b54105d4a7aae60c08fc45f9687181b4fdfc625bd1a753fa7397fed75
+  3547f11ca8696646f2f3acb08e31016afac23e630c5d11f59f61fef57b0d2aa5
+
+Keccak-256 of the public key:
+  c1ffd3cfee2d9e5cd67643f8f39fd6e51aad88f6f4ce6ab8827279cfffb92266
+
+Last 20 bytes:   0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266
+With EIP-55:    0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266</pre>
+<p>I also measured a few statistical properties:</p>
+<ul>
+  <li><strong>Avalanche.</strong> Flipping one bit of a 512-bit input changed 128.25 of the 256 output bits on average over 2,000 tries (standard deviation 8.12). A perfect random function would give 128 and 8.</li>
+  <li><strong>Balance.</strong> Over 20,000 random hashes, 49.993% of the output bits were 1.</li>
+  <li><strong>Uniformity.</strong> A chi-square test on 640,000 output bytes gave 238.2, and the expected value is about 255, so nothing looks biased.</li>
+  <li><strong>EIP-55.</strong> Changing one character of a checksummed address was caught 19,995 times out of 20,000 (99.975%). An address has about 15 letters on average, and each letter's case works like one checksum bit, so a typo gets through roughly 1 time in 4,000. Addresses with few letters are protected less.</li>
+  <li><strong>Sizes.</strong> 12 words are 128 bits of entropy (about 3.4 x 10<sup>38</sup> options) and 24 words are 256 bits. A private key is a number just under 2<sup>256</sup>, and an address has 160 bits.</li>
+</ul>
+<p>These tests only show that there is no visible bias. They do not prove security, and none of the later steps can add randomness, so if the first 128 bits are weak every key made from them is weak too.</p>
+
+<h2>5. Timeline and SHA-2 vs Keccak</h2>
+<p>Putting the pieces in order shows that the pipeline was built in layers over a long time (years are approximate):</p>
+<table>
+  <tr><th>Year</th><th>What</th><th>Why it matters here</th></tr>
+  <tr><td>1977</td><td>RSA</td><td>First well-known public-key system, not used in the wallet itself</td></tr>
+  <tr><td>2001</td><td>SHA-2 / SHA-512</td><td>Used inside BIP-32 and BIP-39</td></tr>
+  <tr><td>2012</td><td>BIP-32</td><td>Hierarchical deterministic wallets</td></tr>
+  <tr><td>2013</td><td>BIP-39</td><td>Mnemonic words and the seed</td></tr>
+  <tr><td>2014</td><td>BIP-44</td><td>Standard derivation paths</td></tr>
+  <tr><td>2015</td><td>SHA-3 standardized</td><td>Ethereum had already launched with the original Keccak</td></tr>
+  <tr><td>2016</td><td>EIP-55</td><td>Mixed-case checksum for addresses</td></tr>
+</table>
+<p>There is a long gap after RSA and then almost everything wallet-related shows up between 2012 and 2016, which fits with Bitcoin making people care about backing up keys. RSA is missing from the wallet because it needs much bigger keys (around 3,072 bits) for about the same security as a 256-bit elliptic-curve key.</p>
+<p>SHA-2 and Keccak are both hash functions but they are built differently. SHA-2 (Merkle-Damgard) processes the message block by block, and SHA-512 gives 512 bits. Keccak uses a sponge: the message is absorbed into a big internal state and then the output is squeezed out. NIST picked Keccak in 2012 as the basis for SHA-3. When it was standardized in 2015, NIST added two extra domain-separation bits, which changes the padding byte from 0x01 to 0x06. Ethereum was already using the original version, so Keccak-256 and SHA3-256 give different outputs for the same input. For the empty string my run gave:</p>
+<pre>Keccak-256:  c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470
+SHA3-256:    a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a</pre>
+<p>So using a standard SHA3-256 function to build an Ethereum address would give a wrong address.</p>
+
+<h2>6. Why not just one algorithm?</h2>
+<p>Because each step solves a different problem and no single algorithm does all of them. A hash cannot sign anything, a signature scheme cannot turn a backup into twelve words, and a checksum does not protect any secret.</p>
+<ul>
+  <li><strong>BIP-39, BIP-32, BIP-44</strong> handle key management: one short backup that can rebuild a whole tree of keys, in the same place in every wallet.</li>
+  <li><strong>secp256k1</strong> gives the link between private and public key, so you can sign a transaction and others can check it without learning the secret.</li>
+  <li><strong>Keccak-256</strong> shrinks the 64-byte public key to a short fixed-size 20-byte address.</li>
+  <li><strong>EIP-55</strong> catches typing mistakes, which matters a lot because a transaction sent to a wrong address cannot be undone.</li>
+</ul>
+<p>It is also partly history. The first four steps come from the Bitcoin world and use SHA-512 inside, and the last two were added for Ethereum with Keccak, which is why one wallet ends up using two different hash families.</p>
+<p>To see this in a real wallet, create a throwaway wallet in MetaMask (no real money), reveal its 12-word recovery phrase, and import the same phrase into Rabby. The first address will be identical because both follow m/44'/60'/0'/0/0. Adding a second account gives a new address from the same phrase, which is the same path with the last index set to 1. The mixed upper and lower case in the displayed address is EIP-55, and changing the case of one letter in a pasted address usually makes the wallet reject it.</p>
+
+
+</section>
+
+<script>
+const p = 17, G = [1, 5];                          // toy curve (secp256k1 has a=0, b=7 too!)
+const mod = a => ((a % p) + p) % p;
+const inv = a => { let r = 1; for (let i = 0; i < p - 2; i++) r = mod(r * a); return r; }; // Fermat
+const add = (P, Q) => {                            // null = point at infinity
+  if (!P) return Q; if (!Q) return P;
+  if (P[0] == Q[0] && mod(P[1] + Q[1]) == 0) return null;
+  const s = P[0] == Q[0] ? mod(3 * P[0] ** 2 * inv(2 * P[1])) : mod((Q[1] - P[1]) * inv(Q[0] - P[0]));
+  const x = mod(s * s - P[0] - Q[0]);
+  return [x, mod(s * (P[0] - x) - P[1])];
+};
+const mul = (k, P) => { let R = null; for (; k; k >>= 1, P = add(P, P)) if (k & 1) R = add(R, P); return R; }; // double-and-add
+
+// all points on the curve, for the background grid
+const curve = [];
+for (let x = 0; x < p; x++) for (let y = 0; y < p; y++) if (mod(y * y) == mod(x ** 3 + 7)) curve.push([x, y]);
+
+const ctx = c.getContext("2d"), S = 20, px = ([x, y]) => [20 + x * S, 340 - y * S];
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function base() {
+  ctx.clearRect(0, 0, 360, 360);
+  ctx.fillStyle = "#333"; for (let x = 0; x < p; x++) for (let y = 0; y < p; y++) ctx.fillRect(...px([x, y]), 2, 2);
+  ctx.fillStyle = "#58a"; curve.forEach(P => { ctx.beginPath(); ctx.arc(...px(P), 4, 0, 7); ctx.fill(); });
+}
+
+async function run() {
+  const k = +document.getElementById("k").value; base(); out.textContent = "";
+  let P = null, prev = null;
+  for (let i = 1; i <= k; i++) {
+    P = add(P, G);                                   // i·G = (i-1)·G + G
+    out.textContent += `${i}G = ${P ? `(${P})` : "∞  (the walk wrapped around!)"}\n`;
+    if (!P) break;
+    if (prev) { ctx.strokeStyle = "#f9a"; ctx.beginPath(); ctx.moveTo(...px(prev)); ctx.lineTo(...px(P)); ctx.stroke(); }
+    ctx.fillStyle = i == k ? "#7fdbca" : "#fc6"; ctx.beginPath(); ctx.arc(...px(P), i == k ? 8 : 5, 0, 7); ctx.fill();
+    ctx.fillStyle = "#fff"; ctx.fillText(i, px(P)[0] + 7, px(P)[1] - 7);
+    prev = P; await sleep(700);
+  }
+  out.innerHTML += `\nPrivate key k = ${k}\n<b>TOY PUBLIC KEY Q = kG = (${mul(k, G)})</b>`;
+}
+
+// ---------- statistics ----------
+let n = 1; while (mul(n, G)) n++;                    // order of G
+const pts = [null]; for (let k = 1; k < n; k++) pts.push(mul(k, G));
+const bits = ([x, y]) => (x << 5) | y, pop = v => v.toString(2).replace(/0/g, "").length;
+
+const cx = {}; pts.slice(1).forEach(([x]) => cx[x] = (cx[x] || 0) + 1);
+let av = 0, cnt = 0;                                 // avalanche: flip 1 bit of k, how many output bits flip?
+for (let k = 1; k < n; k++) for (let b = 0; b < 5; b++) { const k2 = k ^ (1 << b); if (k2 > 0 && k2 < n) { av += pop(bits(pts[k]) ^ bits(pts[k2])); cnt++; } }
+const xs = pts.slice(1).map(P => P[0]), ks = xs.map((_, i) => i + 1), m = a => a.reduce((s, v) => s + v) / a.length;
+const mx = m(xs), mk = m(ks);
+const r = ks.reduce((s, k, i) => s + (k - mk) * (xs[i] - mx), 0) /
+  Math.sqrt(ks.reduce((s, k) => s + (k - mk) ** 2, 0) * xs.reduce((s, x) => s + (x - mx) ** 2, 0));
+
+st.textContent =
+`order of G           : ${n}   (k and k+${n} give the SAME key → toy key space is tiny)
+distinct x values hit: ${Object.keys(cx).length} of ${p}   (only ~half of x's are valid curve points)
+x frequency          : ${Object.entries(cx).map(([x, f]) => `x=${x}:${"█".repeat(f)}`).join("  ")}
+corr(k, x)           : ${r.toFixed(3)}   (≈0 → no *linear* link between input and output)
+avalanche (10-bit out): ${(av / cnt).toFixed(2)} bits flip on avg per 1-bit change in k (ideal hash ≈ 5.00)
+
+Reading it:
+• One-wayness (hard ECDLP) is the property that matters here — NOT uniformity or avalanche.
+• Avalanche / uniform bits / collision resistance are HASH-specific goals. kG is
+  structured: (k+1)G = kG + G, so neighbouring keys are related by one cheap group op.
+• Real secp256k1 has ~2^256 points, so brute-forcing k from Q is infeasible; here we can do it instantly.`;
+</script>
+</body>
+</html>
